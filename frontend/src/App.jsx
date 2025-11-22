@@ -30,6 +30,7 @@ function App() {
  const [chatMessages, setChatMessages] = useState([]);
  const [chatInput, setChatInput] = useState("");
  const [loading, setLoading] = useState(false);
+ const [calendarConnected, setCalendarConnected] = useState(false);
 
 
  useEffect(() => {
@@ -40,8 +41,59 @@ function App() {
 
  useEffect(() => {
    //fetch syllabi when user logs in
-   if (user) fetchSyllabi();
+   if (user) {
+     fetchSyllabi();
+     checkCalendarConnection();
+   }
  }, [user]);
+
+ // Check calendar connection status on mount
+ useEffect(() => {
+   const urlParams = new URLSearchParams(window.location.search);
+   if (urlParams.get('calendar_connected') === 'true') {
+     setCalendarConnected(true);
+     showAlert('Google Calendar connected successfully!', 'success');
+     // Clean up URL
+     window.history.replaceState({}, document.title, window.location.pathname);
+   }
+ }, []);
+
+ // Check if user has connected Google Calendar
+ const checkCalendarConnection = async () => {
+   if (!user) return;
+   
+   try {
+     const res = await fetch(`${API_URL}/auth/google/status/${user.uid}`);
+     const data = await res.json();
+     setCalendarConnected(data.connected);
+   } catch (err) {
+     console.error('Error checking calendar connection:', err);
+   }
+ };
+
+ // Connect to Google Calendar
+ const connectGoogleCalendar = async () => {
+   if (!user) {
+     showAlert('Please log in first', 'warning');
+     return;
+   }
+
+   setLoading(true);
+   try {
+     const res = await fetch(`${API_URL}/auth/google/url?user_id=${user.uid}`);
+     const data = await res.json();
+     
+     if (res.ok && data.authorization_url) {
+       // Redirect to Google OAuth page
+       window.location.href = data.authorization_url;
+     } else {
+       showAlert('Failed to initiate Google Calendar connection', 'error');
+     }
+   } catch (err) {
+     showAlert('Error connecting to Google Calendar', 'error');
+   }
+   setLoading(false);
+ };
 
  // Helper function to show alerts
  const showAlert = (message, severity = 'info') => {
@@ -159,8 +211,19 @@ function App() {
 
  // Add items to Google Calendar
  const addToGoogleCalendar = async () => {
+   if (!calendarConnected) {
+     showAlert("Please connect your Google Calendar first", "warning");
+     return;
+   }
+
    if (!selectedSyllabus || syllabusItems.length === 0) {
      showAlert("Please select a syllabus with items", "warning");
+     return;
+   }
+
+   const selectedItems = syllabusItems.filter(item => item.selected);
+   if (selectedItems.length === 0) {
+     showAlert("Please select at least one item to add", "warning");
      return;
    }
 
@@ -172,18 +235,28 @@ function App() {
        body: JSON.stringify({
          user_id: user.uid,
          syllabus_id: selectedSyllabus,
-         items: syllabusItems.filter(item => item.selected),
+         items: selectedItems,
        }),
      });
 
      const data = await res.json();
      if (res.ok) {
-       showAlert("Items added to Google Calendar successfully!", "success");
+       const successMessage = `Successfully added ${data.total_created} event(s) to your Google Calendar!`;
+       showAlert(successMessage, "success");
+       
+       if (data.failed_events && data.failed_events.length > 0) {
+         console.warn('Some events failed:', data.failed_events);
+       }
      } else {
-       showAlert(data.detail || "Failed to add to calendar", "error");
+       if (res.status === 401) {
+         showAlert("Calendar connection expired. Please reconnect your Google account.", "warning");
+         setCalendarConnected(false);
+       } else {
+         showAlert(data.detail || "Failed to add to calendar", "error");
+       }
      }
    } catch (err) {
-     showAlert("Error adding to calendar", "error");
+     showAlert("Error adding to calendar: " + err.message, "error");
    }
    setLoading(false);
  };
@@ -569,17 +642,40 @@ return (
               )}
             </div>
 
+            {/* Google Calendar Connection Status */}
+            {!calendarConnected && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-4">
+                <p className="text-sm text-yellow-800 mb-2">
+                  📅 Connect your Google Calendar to add events
+                </p>
+                <button
+                  onClick={connectGoogleCalendar}
+                  disabled={loading}
+                  className="w-full bg-white border-2 py-2 rounded-xl transition font-semibold hover:bg-gray-50 disabled:opacity-50"
+                  style={{ borderColor: '#505081', color: '#505081' }}
+                >
+                  {loading ? 'Connecting...' : '🔗 Connect Google Calendar'}
+                </button>
+              </div>
+            )}
+
             {/* Add to Google Calendar Button */}
             <button
               onClick={addToGoogleCalendar}
-              disabled={loading || !selectedSyllabus || syllabusItems.filter(item => item.selected).length === 0}
+              disabled={loading || !calendarConnected || !selectedSyllabus || syllabusItems.filter(item => item.selected).length === 0}
               className="w-full text-white py-3 rounded-xl transition font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ backgroundColor: '#505081' }}
               onMouseEnter={(e) => !e.target.disabled && (e.target.style.backgroundColor = '#272757')}
               onMouseLeave={(e) => !e.target.disabled && (e.target.style.backgroundColor = '#505081')}
             >
-              {loading ? 'Loading...' : 'Add to Google Calendar'}
+              {loading ? 'Loading...' : calendarConnected ? 'Add to Google Calendar' : 'Connect Calendar First'}
             </button>
+            
+            {calendarConnected && (
+              <p className="text-xs text-center text-green-600 mt-2">
+                ✅ Google Calendar Connected
+              </p>
+            )}
           </div>
         </div>
       )}

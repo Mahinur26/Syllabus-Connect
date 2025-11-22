@@ -1,0 +1,48 @@
+COMPUTER SCIENCE 101 - INTRODUCTION TO PROGRAMMING
+FALL 2025 SYLLABUS
+
+Course Information:
+Instructor: Dr. Sarah Johnson
+Email: sjohnson@university.edu
+Office Hours: Monday & Wednesday 2-4 PM
+
+Course Schedule and Assignments:
+
+ASSIGNMENTS (30% of final grade):
+- Assignment 1: Hello World Program - Due: January 20, 2025
+- Assignment 2: Variables and Data Types - Due: February 3, 2025
+- Assignment 3: Control Flow - Due: February 17, 2025
+- Assignment 4: Functions and Modules - Due: March 10, 2025
+- Assignment 5: Object-Oriented Programming - Due: April 7, 2025
+
+QUIZZES (20% of final grade):
+- Quiz 1: Python Basics - Due: February 10, 2025
+- Quiz 2: Data Structures - Due: March 24, 2025
+- Quiz 3: Advanced Concepts - Due: April 21, 2025
+
+PROJECTS (25% of final grade):
+- Midterm Project: Build a Calculator App - Due: March 15, 2025
+- Final Project: Personal Portfolio Website - Due: May 10, 2025
+
+EXAMS (25% of final grade):
+- Midterm Exam - Due: March 17, 2025
+- Final Exam - Due: May 15, 2025
+
+HOMEWORK (Pass/Fail):
+- Weekly Coding Exercises - Every Friday starting January 17, 2025
+
+ESSAYS (Extra Credit):
+- Research Paper: History of Computing - Due: April 28, 2025
+
+Grading Policy:
+A: 90-100%
+B: 80-89%
+C: 70-79%
+D: 60-69%
+F: Below 60%
+
+Late Policy:
+Assignments submitted late will receive a 10% deduction per day.
+
+Academic Integrity:
+All work must be your own. Collaboration is encouraged, but copying is prohibited.
