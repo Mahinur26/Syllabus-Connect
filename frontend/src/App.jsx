@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Snackbar, Alert, Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography } from "@mui/material";
+import { Snackbar, Alert } from "@mui/material";
 
 //Chaged the api url to accept both the local host and deployed url
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -14,24 +14,17 @@ function App() {
  const [activeTab, setActiveTab] = useState("inventory");
 
 
- const [inventory, setInventory] = useState([]);
- const [itemName, setItemName] = useState("");
- const [itemQuantity, setItemQuantity] = useState("");
- const [itemExpiration, setItemExpiration] = useState("");
- const [itemCategory, setItemCategory] = useState(""); // Optional category override
+ const [syllabi, setSyllabi] = useState([]);
+ const [selectedSyllabus, setSelectedSyllabus] = useState("");
+ const [syllabusItems, setSyllabusItems] = useState([]);
+ const [uploadedFile, setUploadedFile] = useState(null);
+ const [filePreview, setFilePreview] = useState(null);
 
  // Alert state (for general notifications)
  const [alertState, setAlertState] = useState({
    open: false,
    message: '',
    severity: 'info' // 'error' | 'warning' | 'info' | 'success'
- });
-
- // Delete confirmation dialog state
- const [deleteDialog, setDeleteDialog] = useState({
-   open: false,
-   itemId: null,
-   itemName: ''
  });
 
  const [chatMessages, setChatMessages] = useState([]);
@@ -46,8 +39,8 @@ function App() {
 
 
  useEffect(() => {
-   //fetch inventory when user logs in
-   if (user) fetchInventory();
+   //fetch syllabi when user logs in
+   if (user) fetchSyllabi();
  }, [user]);
 
  // Helper function to show alerts
@@ -64,6 +57,13 @@ function App() {
  //Sends a POST request to the backend to either log in or sign up the user based on the isLogin state
  //A POST request means sending data from the frontend to the backend for processing, in this case for logging/signing in
  const handleAuth = async () => {
+   // BYPASS: Uncomment the lines below to skip authentication
+   const mockUser = { uid: 'test-user-123', email: email || 'test@example.com' };
+   setUser(mockUser);
+   localStorage.setItem("bullavor_user", JSON.stringify(mockUser));
+   showAlert('Bypassed login', 'success');
+   return;
+
    setLoading(true);
    try {
      const res = await fetch(
@@ -90,149 +90,116 @@ function App() {
  };
 
 
- //function that fetches the inventory of the user that is currently logged in - items in their pantry
- const fetchInventory = async () => {
+ //function that fetches the syllabi of the user that is currently logged in
+ const fetchSyllabi = async () => {
    try {
-     const res = await fetch(`${API_URL}/inventory/${user.uid}`);
+     const res = await fetch(`${API_URL}/syllabi/${user.uid}`);
      const data = await res.json();
-     setInventory(data);
+     setSyllabi(data);
+   } catch (err) {
+     console.error(err);
+   }
+ };
+
+ //function that fetches the items from a selected syllabus
+ const fetchSyllabusItems = async (syllabusId) => {
+   try {
+     const res = await fetch(`${API_URL}/syllabi/${syllabusId}/items`);
+     const data = await res.json();
+     // Initialize items with selected property
+     setSyllabusItems(data.map(item => ({ ...item, selected: item.selected || false })));
    } catch (err) {
      console.error(err);
    }
  };
 
 
- useEffect(() => {
-   if (inventory.length === 0) return;
+ // Handle file upload
+ const handleFileUpload = async (event) => {
+   const file = event.target.files[0];
+   if (!file) return;
 
+   setUploadedFile(file);
+   setFilePreview(URL.createObjectURL(file));
+   setLoading(true);
 
-   const today = new Date();
-   const expiringSoon = inventory.filter((item) => {
-     if (!item.expiration_date) return false;
-     const expDate = new Date(item.expiration_date);
-     const diffDays = (expDate - today) / (1000 * 60 * 60 * 24);
-     return diffDays <= 3 && diffDays >= 0; // expires in 3 days or less
-   });
+   try {
+     const formData = new FormData();
+     formData.append('file', file);
+     formData.append('user_id', user.uid);
 
+     const res = await fetch(`${API_URL}/syllabi/upload`, {
+       method: 'POST',
+       body: formData,
+     });
 
-   if (expiringSoon.length > 0) {
-     showAlert(
-       `Heads up! These items are expiring soon: ${expiringSoon
-         .map((i) => i.name)
-         .join(", ")}`,
-       "warning"
-     );
+     const data = await res.json();
+     if (res.ok) {
+       await fetchSyllabi();
+       showAlert('Syllabus uploaded successfully!', 'success');
+     } else {
+       showAlert(data.detail || 'Upload failed', 'error');
+     }
+   } catch (err) {
+     showAlert('Error uploading file', 'error');
    }
- }, [inventory]);
+   setLoading(false);
+ };
+
+ // Handle syllabus selection
+ useEffect(() => {
+   if (selectedSyllabus) {
+     fetchSyllabusItems(selectedSyllabus);
+   } else {
+     setSyllabusItems([]);
+   }
+ }, [selectedSyllabus]);
 
 
- //Sends the new item data to the backend, then refreshes the inventory list to show the new item
- const addItem = async () => {
-   if (!itemName || !itemQuantity) {
-     showAlert("Name and quantity required", "warning");
+ // Add items to Google Calendar
+ const addToGoogleCalendar = async () => {
+   if (!selectedSyllabus || syllabusItems.length === 0) {
+     showAlert("Please select a syllabus with items", "warning");
      return;
    }
+
    setLoading(true);
    try {
-     await fetch(`${API_URL}/inventory`, {
+     const res = await fetch(`${API_URL}/calendar/add`, {
        method: "POST",
        headers: { "Content-Type": "application/json" },
        body: JSON.stringify({
          user_id: user.uid,
-         name: itemName,
-         quantity: parseInt(itemQuantity),
-         expiration_date: itemExpiration || null,
-         category: itemCategory || null, // Send category if manually selected, otherwise let backend auto-detect
+         syllabus_id: selectedSyllabus,
+         items: syllabusItems.filter(item => item.selected),
        }),
      });
-     setItemName("");
-     setItemQuantity("");
-     setItemExpiration("");
-     setItemCategory("");
-     await fetchInventory();
-     showAlert("Item added successfully!", "success");
+
+     const data = await res.json();
+     if (res.ok) {
+       showAlert("Items added to Google Calendar successfully!", "success");
+     } else {
+       showAlert(data.detail || "Failed to add to calendar", "error");
+     }
    } catch (err) {
-     showAlert("Error adding item", "error");
+     showAlert("Error adding to calendar", "error");
    }
    setLoading(false);
  };
 
-
- //Opens the delete confirmation dialog
- const openDeleteDialog = (itemId, itemName) => {
-   setDeleteDialog({ open: true, itemId, itemName });
- };
-
- //Closes the delete confirmation dialog
- const closeDeleteDialog = () => {
-   setDeleteDialog({ open: false, itemId: null, itemName: '' });
- };
-
- //Deletes an item from the inventory by sending a POST request to the backend and updating the UI
- const confirmDelete = async () => {
-   const itemId = deleteDialog.itemId;
-   closeDeleteDialog();
-   setLoading(true);
-   try {
-     await fetch(`${API_URL}/inventory/delete`, {
-       method: "POST",
-       headers: { "Content-Type": "application/json" },
-       body: JSON.stringify({ item_id: itemId }),
-     });
-     await fetchInventory(); // Refresh the inventory list
-     showAlert("Item deleted successfully", "success");
-   } catch (err) {
-     showAlert("Error deleting item", "error");
-   }
-   setLoading(false);
- };
-
-
- // Update category for an item
- const updateCategory = async (itemId, newCategory) => {
-   setLoading(true);
-   try {
-     await fetch(`${API_URL}/inventory/${itemId}/category`, {
-       method: "PUT",
-       headers: { "Content-Type": "application/json" },
-       body: JSON.stringify({ category: newCategory }),
-     });
-     await fetchInventory(); // Refresh the inventory list
-     showAlert("Category updated successfully", "success");
-   } catch (err) {
-     showAlert("Error updating category", "error");
-   }
-   setLoading(false);
- };
-
- // Helper function to get expiration color based on days remaining
- const getExpirationColor = (expirationDate) => {
-   if (!expirationDate) return "text-gray-600";
-   
-   const today = new Date();
-   const expDate = new Date(expirationDate);
-   const diffDays = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
-   
-   if (diffDays <= 3 && diffDays >= 0) {
-     return "text-red-600 font-semibold"; // Expires in 3 days or less
-   } else if (diffDays >= 4 && diffDays <= 7) {
-     return "text-yellow-600 font-semibold"; // Expires in 4-7 days
-   }
-   return "text-gray-600"; // More than 7 days or already expired
- };
-
- // Group inventory items by category
- const groupInventoryByCategory = (items) => {
+ // Group syllabus items by category
+ const groupSyllabusItemsByCategory = (items) => {
    const grouped = {};
    const categoryOrder = [
-     "Fruits",
-     "Vegetables",
-     "Dairy",
-     "Meat",
-     "Grains",
+     "Exams",
+     "Assignments",
+     "Homework",
+     "Projects",
+     "Tests",
+     "Quizzes",
+     "Essays",
      "Other",
    ];
-
 
    items.forEach((item) => {
      const category = item.category || "Other";
@@ -242,7 +209,6 @@ function App() {
      grouped[category].push(item);
    });
 
-
    // Sort categories according to predefined order
    const sorted = {};
    categoryOrder.forEach((cat) => {
@@ -251,7 +217,6 @@ function App() {
      }
    });
 
-
    // Add any categories not in the predefined list
    Object.keys(grouped).forEach((cat) => {
      if (!categoryOrder.includes(cat)) {
@@ -259,8 +224,16 @@ function App() {
      }
    });
 
-
    return sorted;
+ };
+
+ // Toggle item selection
+ const toggleItemSelection = (itemId) => {
+   setSyllabusItems(items =>
+     items.map(item =>
+       item.id === itemId ? { ...item, selected: !item.selected } : item
+     )
+   );
  };
 
  // Parse recipe response into structured sections
@@ -350,59 +323,6 @@ return (
       </Alert>
     </Snackbar>
 
-    {/* Delete Confirmation Dialog */}
-    <Dialog
-      open={deleteDialog.open}
-      onClose={closeDeleteDialog}
-      PaperProps={{
-        sx: {
-          borderRadius: '20px',
-          padding: '12px',
-          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12)'
-        }
-      }}
-    >
-      <DialogTitle sx={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#505081' }}>
-        Delete Item
-      </DialogTitle>
-
-      <DialogContent>
-        <Typography sx={{ fontSize: '1rem', color: '#4b5563' }}>
-          Are you sure you want to delete <strong>{deleteDialog.itemName}</strong>? This action cannot be undone.
-        </Typography>
-      </DialogContent>
-
-      <DialogActions sx={{ padding: '16px 24px' }}>
-        <Button 
-          onClick={closeDeleteDialog} 
-          sx={{ 
-            color: '#6b7280',
-            fontWeight: 600,
-            textTransform: 'none',
-            fontSize: '1rem',
-            '&:hover': { backgroundColor: '#f3f4f6' }
-          }}
-        >
-          Cancel
-        </Button>
-        <Button 
-          onClick={confirmDelete} 
-          variant="contained"
-          sx={{ 
-            backgroundColor: '#dc2626',
-            fontWeight: 600,
-            textTransform: 'none',
-            fontSize: '1rem',
-            borderRadius: '12px',
-            paddingX: '24px',
-            '&:hover': { backgroundColor: '#b91c1c' }
-          }}
-        >
-          Delete
-        </Button>
-      </DialogActions>
-    </Dialog>
-
     {!user ? (
       <div className="min-h-screen flex items-center justify-center p-6" style={{ backgroundColor: '#8686AC' }}>
   <div className="bg-[#D3D3D3] rounded-2xl shadow-2xl p-10 w-full max-w-md">
@@ -453,7 +373,7 @@ return (
           <div className="max-w-6xl mx-auto px-6 py-5 flex justify-between items-center">
             <h1 className="text-3xl font-bold" style={{ color: '#505081' }}>Syllabus Connect</h1>
             <div className="flex gap-6 items-center">
-              <span className="text-sm text-gray-600 font-medium">{user.email}</span>
+              <span className="text-sm text-gray-600 font-medium">User</span>
               <button
                 onClick={() => {
                   setUser(null);
@@ -479,7 +399,7 @@ return (
               }`}
               style={activeTab === 'inventory' ? { backgroundColor: '#505081' } : {}}
             >
-              Inventory
+              Syllabus
             </button>
             <button
                 onClick={() => setActiveTab('chat')}
@@ -494,138 +414,133 @@ return (
             </button>
           </div>
 
-          {/* Inventory Tab */}
+          {/* Syllabus Tab */}
           {activeTab === 'inventory' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Add / Scan Item */}
+          {/* Left Panel - Upload Area */}
           <div className="space-y-6">
-            {/* Add Item */}
-            <div className="bg-[#D3D3D3] rounded-2xl shadow-lg p-6 space-y-4">
-              <h2 className="text-xl font-bold mb-2">Add Item</h2>
-              <div className="space-y-3">
+            <div className="bg-[#D3D3D3] rounded-2xl shadow-lg p-6">
+              <label
+                htmlFor="file-upload"
+                className="flex flex-col items-center justify-center w-full h-96 border-2 border-dashed rounded-xl cursor-pointer transition hover:bg-opacity-50"
+                style={{ 
+                  borderColor: '#505081',
+                  backgroundColor: filePreview ? 'rgba(134, 134, 172, 0.1)' : 'rgba(134, 134, 172, 0.05)'
+                }}
+              >
+                {filePreview ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center p-4">
+                    <div className="text-4xl mb-4" style={{ color: '#505081' }}>📄</div>
+                    <p className="text-sm font-medium mb-2" style={{ color: '#505081' }}>
+                      {uploadedFile?.name || 'Syllabus Preview'}
+                    </p>
+                    <p className="text-xs text-gray-500">Click to upload a different file</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center">
+                    <svg
+                      className="w-16 h-16 mb-4"
+                      style={{ color: '#505081' }}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                      />
+                    </svg>
+                    <p className="text-lg font-semibold mb-2" style={{ color: '#505081' }}>
+                      Upload
+                    </p>
+                  </div>
+                )}
                 <input
-                  type="text"
-                  placeholder="Item name"
-                  value={itemName}
-                  onChange={(e) => setItemName(e.target.value)}
-                  className="w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#505081] transition"
-                />
-                <input
-                  type="number"
-                  placeholder="Quantity"
-                  value={itemQuantity}
-                  onChange={(e) => setItemQuantity(e.target.value)}
-                  className="w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#505081] transition"
-                />
-                <input
-                  type="date"
-                  value={itemExpiration}
-                  onChange={(e) => setItemExpiration(e.target.value)}
-                  className="w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#505081] transition"
-                />
-                <select
-                  value={itemCategory}
-                  onChange={(e) => setItemCategory(e.target.value)}
-                  className="w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#505081] bg-[#D3D3D3] transition"
-                >
-                  <option value="">Auto-detect category</option>
-                  <option value="Fruits">Fruits</option>
-                  <option value="Vegetables">Vegetables</option>
-                  <option value="Dairy">Dairy</option>
-                  <option value="Meat">Meat</option>
-                  <option value="Grains">Grains</option>
-                  <option value="Other">Other</option>
-                </select>
-                <button
-                  onClick={addItem}
+                  id="file-upload"
+                  type="file"
+                  className="hidden"
+                  accept=".pdf,.doc,.docx"
+                  onChange={handleFileUpload}
                   disabled={loading}
-                  className="w-full text-white py-3 rounded-xl transition font-semibold disabled:opacity-50"
-                  style={{ backgroundColor: '#505081' }}
-                  onMouseEnter={(e) => e.target.style.backgroundColor = '#272757'}
-                  onMouseLeave={(e) => e.target.style.backgroundColor = '#505081'}
-                >
-                  Add
-                </button>
-              </div>
+                />
+              </label>
             </div>
           </div>
 
-          {/* Inventory List */}
-          <div className="space-y-4">
-            <div className="bg-[#D3D3D3] rounded-2xl shadow-lg p-6 space-y-3">
-              <h2 className="text-xl font-bold mb-4">Your Items</h2>
-              {inventory.length === 0 ? (
-                <p className="text-gray-500 text-center">No items yet</p>
+          {/* Right Panel - Syllabus Selection and Items */}
+          <div className="space-y-6">
+            {/* Syllabus Selection Dropdown */}
+            <div className="bg-[#D3D3D3] rounded-2xl shadow-lg p-6">
+              <label className="block text-sm font-semibold mb-2 text-gray-700">
+                Syllabus Selection
+              </label>
+              <select
+                value={selectedSyllabus}
+                onChange={(e) => setSelectedSyllabus(e.target.value)}
+                className="w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#505081] bg-white transition"
+              >
+                <option value="">Select a syllabus</option>
+                {syllabi.map((syllabus) => (
+                  <option key={syllabus.id} value={syllabus.id}>
+                    {syllabus.name}
+                  </option>
+                ))}
+              </select>
+          
+            </div>
+
+            {/* Syllabus Items List */}
+            <div className="bg-[#D3D3D3] rounded-2xl shadow-lg p-6 space-y-4">
+              <h2 className="text-xl font-bold mb-4">Syllabus Items</h2>
+              {!selectedSyllabus ? (
+                <p className="text-gray-500 text-center py-8">
+                  Select a syllabus to view items
+                </p>
+              ) : syllabusItems.length === 0 ? (
+                <p className="text-gray-500 text-center py-8">No items found</p>
               ) : (
-                <div className="space-y-6">
-                  {Object.entries(groupInventoryByCategory(inventory)).map(
+                <div className="space-y-4 max-h-96 overflow-y-auto">
+                  {Object.entries(groupSyllabusItemsByCategory(syllabusItems)).map(
                     ([category, items]) => (
                       <div key={category}>
-                        <div className="flex items-center justify-between mb-3">
-                          <h3 className="text-lg font-semibold text-gray-800">
-                            {category} ({items.length})
-                          </h3>
-                        </div>
-                        <div className="grid grid-cols-1 gap-3">
+                        <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                          {category} ({items.length})
+                        </h3>
+                        <div className="space-y-2">
                           {items.map((item) => (
                             <div
                               key={item.id}
-                              className="p-4 rounded-xl border flex justify-between items-start shadow-sm"
-                              style={{ backgroundColor: 'rgba(134, 134, 172, 0.15)' }}
+                              className={`p-4 rounded-xl border flex items-start gap-3 shadow-sm cursor-pointer transition ${
+                                item.selected
+                                  ? 'border-2'
+                                  : 'border'
+                              }`}
+                              style={{
+                                backgroundColor: item.selected
+                                  ? 'rgba(80, 80, 129, 0.1)'
+                                  : 'rgba(134, 134, 172, 0.15)',
+                                borderColor: item.selected ? '#505081' : 'rgba(0, 0, 0, 0.1)',
+                              }}
+                              onClick={() => toggleItemSelection(item.id)}
                             >
+                              <input
+                                type="checkbox"
+                                checked={item.selected || false}
+                                onChange={() => toggleItemSelection(item.id)}
+                                className="mt-1"
+                                style={{ accentColor: '#505081' }}
+                              />
                               <div className="flex-1">
-                                <div className="font-semibold">{item.name}</div>
-                                <div className="text-sm text-gray-600">
-                                  Qty: {item.quantity}
+                                <div className="font-semibold text-gray-800">
+                                  {item.assignment || item.name}
                                 </div>
-                                {item.expiration_date && (
-                                  <div className={`text-sm ${getExpirationColor(item.expiration_date)}`}>
-                                    Expires:{" "}
-                                    {new Date(
-                                      item.expiration_date
-                                    ).toLocaleDateString()}
+                                {item.due_date && (
+                                  <div className="text-sm text-gray-600 mt-1">
+                                    Due: {new Date(item.due_date).toLocaleDateString()}
                                   </div>
                                 )}
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <select
-                                  value={item.category || "Other"}
-                                  onChange={(e) =>
-                                    updateCategory(item.id, e.target.value)
-                                  }
-                                  disabled={loading}
-                                  className="px-2 py-1 text-sm border rounded-lg bg-[#D3D3D3] disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-[#505081] transition"
-                                  onMouseEnter={(e) => e.target.style.borderColor = '#505081'}
-                                  onMouseLeave={(e) => e.target.style.borderColor = ''}
-                                >
-                                  <option value="Fruits">Fruits</option>
-                                  <option value="Vegetables">Vegetables</option>
-                                  <option value="Dairy">Dairy</option>
-                                  <option value="Meat">Meat</option>
-                                  <option value="Grains">Grains</option>
-                                  <option value="Other">Other</option>
-                                </select>
-                                <button
-                                  onClick={() => openDeleteDialog(item.id, item.name)}
-                                  disabled={loading}
-                                  className="ml-2 p-2 hover:bg-red-100 rounded-xl transition-colors disabled:opacity-50"
-                                  title="Delete item"
-                                >
-                                  <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    className="h-5 w-5 text-red-600"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                    strokeWidth={2}
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                                    />
-                                  </svg>
-                                </button>
                               </div>
                             </div>
                           ))}
@@ -636,6 +551,18 @@ return (
                 </div>
               )}
             </div>
+
+            {/* Add to Google Calendar Button */}
+            <button
+              onClick={addToGoogleCalendar}
+              disabled={loading || !selectedSyllabus || syllabusItems.filter(item => item.selected).length === 0}
+              className="w-full text-white py-3 rounded-xl transition font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: '#505081' }}
+              onMouseEnter={(e) => !e.target.disabled && (e.target.style.backgroundColor = '#272757')}
+              onMouseLeave={(e) => !e.target.disabled && (e.target.style.backgroundColor = '#505081')}
+            >
+              {loading ? 'Loading...' : 'Add to Google Calendar'}
+            </button>
           </div>
         </div>
       )}
