@@ -5,12 +5,13 @@ from typing import Optional
 import firebase_admin
 from firebase_admin import credentials, firestore, auth, storage
 import vertexai
-from vertexai.preview.generative_models import GenerativeModel
+from vertexai.generative_models import GenerativeModel, Part
 from datetime import datetime
 import os
 from dotenv import load_dotenv
 from google.oauth2 import service_account
 from difflib import get_close_matches
+import mimetypes
 
 
 # Load environment variables
@@ -223,6 +224,7 @@ class InventoryItem(BaseModel):
 class ChatRequest(BaseModel):
    user_id: str
    message: str
+   syllabus_id: Optional[str] = None
 
 
 
@@ -377,6 +379,25 @@ async def get_syllabi(user_id: str):
         )
 
 
+@app.get("/syllabi/{syllabus_id}/items")
+async def get_syllabus_items(syllabus_id: str):
+    """
+    Get items (assignments, exams, etc.) from a syllabus.
+    For now, returns empty array. Will be implemented with parsing logic later.
+    """
+    try:
+        # TODO: Implement syllabus parsing to extract assignments, exams, dates
+        # This will require PDF/DOCX parsing libraries
+        return []
+        
+    except Exception as e:
+        print(f"Error fetching syllabus items: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching syllabus items: {str(e)}"
+        )
+
+
 # Inventory Endpoints - Loads all the inventory items tied to the user
 
 
@@ -469,71 +490,130 @@ async def update_category(item_id: str, req: UpdateCategoryRequest):
 
 @app.post("/chat")
 async def chat(req: ChatRequest):
+    """
+    Chat with AI assistant about the selected syllabus.
+    Uses Gemini's native file understanding (supports PDF, DOCX, TXT).
+    """
     try:
-        # Get user's inventory
-        #Stores the item with all of its data as a string in the inventory list
-        inventory = []
-        docs = db.collection("inventory").where("user_id", "==", req.user_id).stream()
-        for doc in docs:
-            data = doc.to_dict()
-            #Using f-strings to get the name, quantity, and expiration date of each item in the inventory in a normalized way
-            inventory.append(f"{data['name']} (qty: {data['quantity']}, expires: {data.get('expiration_date', 'N/A')})")
+        # Check if syllabus_id is provided
+        if not req.syllabus_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Please select a syllabus to chat about"
+            )
         
-        # Build prompt
-        #If inventory is empty, then the ternary statement fails and it says no items, otherwise it joins the items with new lines
-        #This variable is used in the f-string for the prompt to Vertex AI
-        inventory_text = "\n".join(inventory) if inventory else "No items in inventory"
-        #We will be prompting Vertex AI with this prompt to get recipe suggestions based on the user's inventory
-        prompt = f"""You are a helpful cooking assistant.
+        # Get syllabus metadata from Firestore
+        syllabus_doc = db.collection("syllabi").document(req.syllabus_id).get()
+        
+        if not syllabus_doc.exists:
+            raise HTTPException(
+                status_code=404,
+                detail="Syllabus not found"
+            )
+        
+        syllabus_data = syllabus_doc.to_dict()
+        
+        # Verify the syllabus belongs to the user
+        if syllabus_data.get("user_id") != req.user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied to this syllabus"
+            )
+        
+        # Get file information
+        file_path = syllabus_data.get("file_path")
+        file_url = syllabus_data.get("file_url")
+        syllabus_name = syllabus_data.get("name", "syllabus")
+        file_type = syllabus_data.get("file_type", "")
+        
+        if not file_path or not file_url:
+            raise HTTPException(
+                status_code=404,
+                detail="Syllabus file information not found"
+            )
+        
+        # Get the blob
+        blob = bucket.blob(file_path)
+        
+        if not blob.exists():
+            raise HTTPException(
+                status_code=404,
+                detail="Syllabus file not found in storage"
+            )
+        
+        print(f"💬 Chat request for syllabus: {syllabus_name}")
+        print(f"   File type: {file_type}")
+        print(f"   Question: {req.message[:100]}...")
+        
+        # Download file as bytes
+        file_bytes = blob.download_as_bytes()
+        
+        # Determine MIME type
+        mime_type_map = {
+            '.pdf': 'application/pdf',
+            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            '.txt': 'text/plain'
+        }
+        mime_type = mime_type_map.get(file_type, 'application/octet-stream')
+        
+        # Create Part object for Gemini (native file understanding)
+        file_part = Part.from_data(
+            data=file_bytes,
+            mime_type=mime_type
+        )
+        
+        # Build prompt optimized for Gemini 2.5 Flash with file context
+        text_prompt = f"""You are Syllabus Buddy, an intelligent academic assistant helping students understand their course syllabus.
 
-Current inventory:
-{inventory_text}
+The student has uploaded a syllabus document named "{syllabus_name}". The document is attached to this conversation.
 
-User question: {req.message}
-
-IMPORTANT: Format your response EXACTLY like this structure:
-
-DISH NAME: [Name of the recipe]
-
-INGREDIENTS:
-- [ingredient 1 with amount]
-- [ingredient 2 with amount]
-- [ingredient 3 with amount]
+STUDENT QUESTION: {req.message}
 
 INSTRUCTIONS:
-1. [First step]
-2. [Second step]
-3. [Third step]
+- Carefully read and analyze the attached syllabus document
+- Answer the student's question based on the syllabus content
+- Be concise, clear, and helpful
+- If the answer isn't in the syllabus, say so and offer general academic advice
+- When referencing specific information, mention what section or page it's from if possible
+- For questions about assignments or exams, provide relevant dates, percentages, and requirements
+- Use a friendly, supportive tone
 
-Rules:
-- Use "DISH NAME:", "INGREDIENTS:", and "INSTRUCTIONS:" as section headers
-- Use simple dashes (-) for each ingredient with amounts
-- Use numbers (1., 2., 3.) for each instruction step
-- Put a blank line between each section
-- Keep instructions clear and concise
-- Prioritize items that are expiring soon
-- If the user asks a general question, still try to suggest a recipe in this format"""
+FORMATTING REQUIREMENTS:
+- Do NOT use markdown, asterisks, or special symbols
+- Make your answers easy to read and chat-friendly
+- Leave whitespace between paragraphs for readability
+- Avoid using **, *, #, or other markdown formatting
 
-        # Call Vertex AI with error handling
-        # The prompt is sent to Vertex AI and the response is stored in response
-        print(f"Sending prompt to Vertex AI: {prompt[:100]}...")  # Debug log
-        response = model.generate_content(prompt)
+Provide your answer:"""
 
-        # Try different ways to access the response
+        # Call Vertex AI with both the file and the prompt
+        print(f"📤 Sending to Gemini with file attachment...")
+        response = model.generate_content([file_part, text_prompt])
+
+        # Extract response text
         if hasattr(response, 'text'):
             response_text = response.text
         elif hasattr(response, 'candidates') and response.candidates:
             response_text = response.candidates[0].content.parts[0].text
         else:
-            print(f"Response object: {response}")  # Debug log
+            print(f"⚠️  Unexpected response format: {response}")
             response_text = str(response)
 
-        # Returns the response from Vertex AI to the frontend
+        print(f"✅ Response generated successfully")
+        
         return {"response": response_text}
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Error in chat endpoint: {str(e)}")  # Debug log
-        print(f"Error type: {type(e)}")  # Debug log
-        raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
+        print(f"❌ Error in chat endpoint: {str(e)}")
+        print(f"   Error type: {type(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Chat error: {str(e)}"
+        )
 
 
 if __name__ == "__main__":

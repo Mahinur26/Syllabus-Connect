@@ -276,6 +276,12 @@ function App() {
    if (!chatInput.trim()) return;
 
 
+   // Check if a syllabus is selected
+   if (!selectedSyllabus) {
+     showAlert("Please select a syllabus first", "warning");
+     return;
+   }
+
    setChatMessages([...chatMessages, { role: "user", content: chatInput }]);
    const msg = chatInput;
    setChatInput("");
@@ -286,8 +292,18 @@ function App() {
      const res = await fetch(`${API_URL}/chat`, {
        method: "POST",
        headers: { "Content-Type": "application/json" },
-       body: JSON.stringify({ user_id: user.uid, message: msg }),
+       body: JSON.stringify({ 
+         user_id: user.uid, 
+         message: msg,
+         syllabus_id: selectedSyllabus
+       }),
      });
+     
+     if (!res.ok) {
+       const errorData = await res.json();
+       throw new Error(errorData.detail || 'Failed to get response');
+     }
+     
      const data = await res.json();
      setChatMessages((prev) => [
        ...prev,
@@ -296,7 +312,7 @@ function App() {
    } catch (err) {
      setChatMessages((prev) => [
        ...prev,
-       { role: "assistant", content: "Error occurred" },
+       { role: "assistant", content: `Error: ${err.message}` },
      ]);
      showAlert("Chat error occurred", "error");
    }
@@ -589,63 +605,28 @@ return (
 
           <div className="h-96 overflow-y-auto p-4 bg-gray-50 rounded-xl space-y-3">
             {chatMessages.length === 0 ? (
-              <p className="text-gray-500 text-center">Ask me about your syllabus!</p>
+              <div className="flex flex-col items-center justify-center h-full text-center">
+                <div className="text-6xl mb-4">📚</div>
+                <p className="text-gray-600 font-medium">Select a syllabus above</p>
+                <p className="text-gray-500 text-sm mt-2">
+                  Then ask me anything about assignments, exams, deadlines, or course content!
+                </p>
+              </div>
             ) : (
               chatMessages.map((msg, i) => (
                 <div key={i} className={`${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
                   <div 
                     className={`inline-block p-4 rounded-xl ${
-                      msg.role === 'user' ? 'text-white max-w-xs' : 'bg-gray-200 max-w-2xl'
+                      msg.role === 'user' ? 'text-white max-w-xs' : 'bg-white max-w-2xl shadow-sm'
                     }`}
                     style={msg.role === 'user' ? { backgroundColor: '#505081' } : {}}
                   >
                     {msg.role === 'assistant' ? (
-                      (() => {
-                        const recipe = parseRecipeResponse(msg.content);
-                        // If we found structured sections, render them nicely
-                        if (recipe.dishName || recipe.ingredients.length > 0 || recipe.instructions.length > 0) {
-                          return (
-                            <div className="text-gray-800">
-                              {recipe.dishName && (
-                                <h3 className="font-bold text-lg mb-3" style={{ color: '#505081' }}>{recipe.dishName}</h3>
-                              )}
-                              {recipe.ingredients.length > 0 && (
-                                <div className="mb-4">
-                                  <h4 className="font-semibold mb-2 text-gray-700">Ingredients:</h4>
-                                  <ul className="space-y-1">
-                                    {recipe.ingredients.map((ing, idx) => (
-                                      <li key={idx} className="text-sm flex items-start">
-                                        <span className="mr-2" style={{ color: '#505081' }}>•</span>
-                                        <span>{ing}</span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              )}
-                              {recipe.instructions.length > 0 && (
-                                <div>
-                                  <h4 className="font-semibold mb-2 text-gray-700">Instructions:</h4>
-                                  <ol className="space-y-2">
-                                    {recipe.instructions.map((step, idx) => (
-                                      <li key={idx} className="text-sm flex items-start">
-                                        <span className="font-semibold mr-2 min-w-[1.5rem]" style={{ color: '#505081' }}>
-                                          {idx + 1}.
-                                        </span>
-                                        <span>{step.replace(/^\d+\.\s*/, '')}</span>
-                                      </li>
-                                    ))}
-                                  </ol>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        } else {
-                          // Fallback to plain text if no structure found
-                          return <div className="text-sm whitespace-pre-wrap">{msg.content}</div>;
-                        }
-                      })()
+                      <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+                        {msg.content}
+                      </div>
                     ) : (
-                      msg.content
+                      <div className="text-sm">{msg.content}</div>
                     )}
                   </div>
                 </div>
@@ -655,12 +636,12 @@ return (
           <div className="flex gap-3">
             <input
               type="text"
-              placeholder="Ask anything..."
+              placeholder={selectedSyllabus ? "Ask about assignments, exams, deadlines..." : "Select a syllabus first"}
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+              onKeyPress={(e) => e.key === 'Enter' && !loading && sendMessage()}
               className="flex-1 px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#505081] transition"
-              disabled={loading}
+              disabled={loading || !selectedSyllabus}
             />
             <button
               onClick={sendMessage}
