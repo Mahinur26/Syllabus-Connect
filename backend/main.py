@@ -39,7 +39,9 @@ PORT = int(os.getenv("PORT", os.getenv("BACKEND_PORT", "8000")))
 # Google OAuth2 Configuration
 GOOGLE_CLIENT_SECRETS_FILE = "client_secret_469326734352-6hhcchpik5b0ov5v6a3gl2h45tfho7q0.apps.googleusercontent.com.json"
 SCOPES = ['https://www.googleapis.com/auth/calendar']
-REDIRECT_URI = f"http://localhost:{PORT}/auth/google/callback"
+# Dynamic redirect URI - uses BACKEND_URL if set (for production), otherwise localhost
+BACKEND_URL = os.getenv("BACKEND_URL", f"http://localhost:{PORT}")
+REDIRECT_URI = f"{BACKEND_URL}/auth/google/callback"
 
 
 
