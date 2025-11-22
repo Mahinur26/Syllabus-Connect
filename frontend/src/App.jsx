@@ -571,7 +571,22 @@ return (
       {/* Chat Tab */}
       {activeTab === 'chat' && (
   <div className="bg-[#D3D3D3] rounded-2xl shadow-lg p-6 space-y-4">
-          <h2 className="text-xl font-bold mb-4">Syllabus Buddy</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold">Syllabus Buddy</h2>
+            <select
+              value={selectedSyllabus}
+              onChange={(e) => setSelectedSyllabus(e.target.value)}
+              className="w-1/4 px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#505081] bg-white transition"
+            >
+              <option value="">Select a syllabus</option>
+              {Array.isArray(syllabi) && syllabi.map((syllabus) => (
+                <option key={syllabus.id} value={syllabus.id}>
+                  {syllabus.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className="h-96 overflow-y-auto p-4 bg-gray-50 rounded-xl space-y-3">
             {chatMessages.length === 0 ? (
               <p className="text-gray-500 text-center">Ask me about your syllabus!</p>
