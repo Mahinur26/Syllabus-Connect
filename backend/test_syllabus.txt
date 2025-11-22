@@ -1,0 +1,25 @@
+Course Syllabus - Introduction to Computer Science
+
+Professor: Dr. Jane Smith
+Email: jane.smith@university.edu
+Office Hours: Monday & Wednesday, 2-4 PM
+
+Course Description:
+This course provides an introduction to computer science fundamentals including programming, algorithms, and data structures.
+
+Grading:
+- Midterm Exam: 30%
+- Final Exam: 30%
+- Assignments: 30%
+- Participation: 10%
+
+Schedule:
+Week 1: Introduction to Programming
+Week 2: Variables and Data Types
+Week 3: Control Flow
+Week 4: Functions
+Week 5: Midterm Exam
+Week 6: Data Structures
+Week 7: Algorithms
+Week 8: Final Project
+Week 9: Final Exam

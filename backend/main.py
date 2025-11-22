@@ -1,9 +1,9 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 import firebase_admin
-from firebase_admin import credentials, firestore, auth
+from firebase_admin import credentials, firestore, auth, storage
 import vertexai
 from vertexai.preview.generative_models import GenerativeModel
 from datetime import datetime
@@ -76,6 +76,8 @@ import json
 
 # Try to get credentials from JSON string first (for Render), then file path
 FIREBASE_CREDENTIALS_JSON = os.getenv("FIREBASE_CREDENTIALS_JSON")
+FIREBASE_STORAGE_BUCKET = os.getenv("FIREBASE_STORAGE_BUCKET")  # e.g., "your-project.appspot.com"
+
 if FIREBASE_CREDENTIALS_JSON:
     # Parse JSON string from environment variable
     cred_dict = json.loads(FIREBASE_CREDENTIALS_JSON)
@@ -83,8 +85,29 @@ if FIREBASE_CREDENTIALS_JSON:
 else:
     # Fall back to file path (for local development)
     cred = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
-firebase_admin.initialize_app(cred)
+
+# Initialize Firebase with storage bucket if provided, otherwise use default
+if FIREBASE_STORAGE_BUCKET:
+    firebase_admin.initialize_app(cred, {
+        'storageBucket': FIREBASE_STORAGE_BUCKET
+    })
+else:
+    # Initialize without bucket - will use default project bucket
+    firebase_admin.initialize_app(cred)
+
 db = firestore.client()
+
+# Get storage bucket - will use the default bucket if not specified
+try:
+    if FIREBASE_STORAGE_BUCKET:
+        bucket = storage.bucket(FIREBASE_STORAGE_BUCKET)
+    else:
+        bucket = storage.bucket()  # Uses default bucket
+    print(f"📦 Storage bucket initialized: {bucket.name}")
+except Exception as e:
+    print(f"⚠️  Storage bucket initialization warning: {e}")
+    print(f"   Make sure Firebase Storage is enabled in Firebase Console")
+    bucket = None
 
 
 # Initialize Vertex AI with explicit credentials
@@ -104,6 +127,40 @@ vertexai.init(
 )
 model = GenerativeModel(MODEL_NAME)
 
+
+# File upload configuration
+ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.txt'}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB in bytes
+
+
+def validate_syllabus_file(file: UploadFile) -> tuple[bool, str]:
+    """
+    Validate uploaded syllabus file.
+    Returns (is_valid, error_message).
+    """
+    # Check if file exists
+    if not file or not file.filename:
+        return False, "No file provided"
+    
+    # Get file extension
+    file_extension = os.path.splitext(file.filename)[1].lower()
+    
+    # Check file extension
+    if file_extension not in ALLOWED_EXTENSIONS:
+        return False, f"Invalid file type. Only {', '.join(ALLOWED_EXTENSIONS)} files are allowed"
+    
+    # Check file size (read content to check size)
+    file.file.seek(0, 2)  # Seek to end
+    file_size = file.file.tell()  # Get position (file size)
+    file.file.seek(0)  # Reset to beginning
+    
+    if file_size > MAX_FILE_SIZE:
+        return False, f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB"
+    
+    if file_size == 0:
+        return False, "File is empty"
+    
+    return True, ""
 
 
 def detect_category(item_name: str) -> str:
@@ -204,6 +261,120 @@ async def login(req: AuthRequest):
    except Exception as e:
        # If DNE then the exception is raised and the user is informed of invalid credentials
        raise HTTPException(status_code=400, detail="Invalid credentials")
+
+
+# Syllabi Endpoints - Handle syllabus file uploads and retrieval
+
+@app.post("/syllabi/upload")
+async def upload_syllabus(
+    file: UploadFile = File(...),
+    user_id: str = Form(...)
+):
+    """
+    Upload a syllabus file (PDF, DOCX, or TXT).
+    Stores file in Firebase Storage and metadata in Firestore.
+    """
+    try:
+        # Check if storage bucket is initialized
+        if bucket is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Firebase Storage is not enabled. Please enable Storage in Firebase Console."
+            )
+        
+        # Validate the file
+        is_valid, error_message = validate_syllabus_file(file)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_message)
+        
+        # Get file extension
+        file_extension = os.path.splitext(file.filename)[1].lower()
+        
+        # Create unique filename to avoid collisions
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_filename = f"{timestamp}_{file.filename}"
+        storage_path = f"syllabi/{user_id}/{safe_filename}"
+        
+        # Upload to Firebase Storage
+        blob = bucket.blob(storage_path)
+        
+        # Read file content
+        file_content = await file.read()
+        
+        # Upload with proper content type
+        content_type_map = {
+            '.pdf': 'application/pdf',
+            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            '.txt': 'text/plain'
+        }
+        blob.upload_from_string(
+            file_content,
+            content_type=content_type_map.get(file_extension, 'application/octet-stream')
+        )
+        
+        # Make the file publicly accessible (or use signed URLs for private access)
+        blob.make_public()
+        file_url = blob.public_url
+        
+        # Store metadata in Firestore
+        doc_ref = db.collection("syllabi").document()
+        syllabus_data = {
+            "user_id": user_id,
+            "name": file.filename,
+            "file_url": file_url,
+            "file_type": file_extension,
+            "file_path": storage_path,
+            "upload_date": datetime.now(),
+            "created_at": datetime.now()
+        }
+        doc_ref.set(syllabus_data)
+        
+        return {
+            "id": doc_ref.id,
+            "message": "Syllabus uploaded successfully",
+            "name": file.filename,
+            "file_url": file_url,
+            "file_type": file_extension
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Upload error: {str(e)}")  # Debug log
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error uploading syllabus: {str(e)}"
+        )
+
+
+@app.get("/syllabi/{user_id}")
+async def get_syllabi(user_id: str):
+    """
+    Get all syllabi for a specific user.
+    Returns list of syllabus metadata.
+    """
+    try:
+        syllabi = []
+        docs = db.collection("syllabi").where("user_id", "==", user_id).stream()
+        
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            # Convert datetime to string for JSON serialization
+            if "upload_date" in data:
+                data["upload_date"] = data["upload_date"].isoformat()
+            if "created_at" in data:
+                data["created_at"] = data["created_at"].isoformat()
+            syllabi.append(data)
+        
+        return syllabi
+        
+    except Exception as e:
+        print(f"Error fetching syllabi: {str(e)}")  # Debug log
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching syllabi: {str(e)}"
+        )
 
 
 # Inventory Endpoints - Loads all the inventory items tied to the user
