@@ -1,7 +1,9 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
+import io
+import pdfplumber
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
 import vertexai
@@ -75,34 +77,34 @@ print(f"   Allow Credentials: {use_credentials}")
 import json
 
 # Try to get credentials from JSON string first (for Render), then file path
-FIREBASE_CREDENTIALS_JSON = os.getenv("FIREBASE_CREDENTIALS_JSON")
-if FIREBASE_CREDENTIALS_JSON:
+#FIREBASE_CREDENTIALS_JSON = os.getenv("FIREBASE_CREDENTIALS_JSON")
+#if FIREBASE_CREDENTIALS_JSON:
     # Parse JSON string from environment variable
-    cred_dict = json.loads(FIREBASE_CREDENTIALS_JSON)
-    cred = credentials.Certificate(cred_dict)
-else:
+ #   cred_dict = json.loads(FIREBASE_CREDENTIALS_JSON)
+  #  cred = credentials.Certificate(cred_dict)
+#else:
     # Fall back to file path (for local development)
-    cred = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
-firebase_admin.initialize_app(cred)
-db = firestore.client()
+ #   cred = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
+#firebase_admin.initialize_app(cred)
+#db = firestore.client()
 
 
 # Initialize Vertex AI with explicit credentials
 # Reusing the Firebase service account for Vertix AI, just using one service account with both Firebase and Vertex AI enabled
-if FIREBASE_CREDENTIALS_JSON:
-    vertex_credentials = service_account.Credentials.from_service_account_info(
-        json.loads(FIREBASE_CREDENTIALS_JSON)
-    )
-else:
-    vertex_credentials = service_account.Credentials.from_service_account_file(
-        FIREBASE_CREDENTIALS_PATH
-    )
-vertexai.init(
-   project=PROJECT_ID,
-   location=LOCATION,
-   credentials=vertex_credentials
-)
-model = GenerativeModel(MODEL_NAME)
+# if FIREBASE_CREDENTIALS_JSON:
+#     vertex_credentials = service_account.Credentials.from_service_account_info(
+#         json.loads(FIREBASE_CREDENTIALS_JSON)
+#     )
+# else:
+#     vertex_credentials = service_account.Credentials.from_service_account_file(
+#         FIREBASE_CREDENTIALS_PATH
+#     )
+# vertexai.init(
+#    project=PROJECT_ID,
+#    location=LOCATION,
+#    credentials=vertex_credentials
+# )
+# model = GenerativeModel(MODEL_NAME)
 
 
 
@@ -183,27 +185,27 @@ class UpdateCategoryRequest(BaseModel):
 
 # Auth Endpoints - Used for signing up and logging in users
 # The @app.post here responds to POST requests from "/auth/signup" in this case (getting data from the frontend)
-@app.post("/auth/signup")
-async def signup(req: AuthRequest):
-   try:
+#@app.post("/auth/signup")
+#async def signup(req: AuthRequest):
+ #  try:
        # Tries to create a new user for firbase auth
-       user = auth.create_user(email=req.email, password=req.password)
-       return {"user": {"uid": user.uid, "email": user.email}}
-   except Exception as e:
-       raise HTTPException(status_code=400, detail=str(e))
+  #     user = auth.create_user(email=req.email, password=req.password)
+   #    return {"user": {"uid": user.uid, "email": user.email}}
+   #except Exception as e:
+    #   raise HTTPException(status_code=400, detail=str(e))
 
 
 
 
-@app.post("/auth/login")
-async def login(req: AuthRequest):
-   try:
+#@app.post("/auth/login")
+#async def login(req: AuthRequest):
+  # try:
        # Checks if user exists in firebase auth for now, but doesn't verify password(Probably ADD LATER )
-       user = auth.get_user_by_email(req.email)
-       return {"user": {"uid": user.uid, "email": user.email}}
-   except Exception as e:
+    #   user = auth.get_user_by_email(req.email)
+    #   return {"user": {"uid": user.uid, "email": user.email}}
+  # except Exception as e:
        # If DNE then the exception is raised and the user is informed of invalid credentials
-       raise HTTPException(status_code=400, detail="Invalid credentials")
+   #    raise HTTPException(status_code=400, detail="Invalid credentials")
 
 
 # Inventory Endpoints - Loads all the inventory items tied to the user
@@ -211,160 +213,193 @@ async def login(req: AuthRequest):
 
 
 
-@app.get("/inventory/{user_id}")
-async def get_inventory(user_id: str):
-   # The items the user has in their inventory is stored locally in a list, and populated from the firestore database so we can fetch it for use at later times
-   items = []
-   # Getting the data from firestore where the user_id matches the user and putting it (streaming) in the items list
-   docs = db.collection("inventory").where("user_id", "==", user_id).stream()
-   for doc in docs:
-       data = doc.to_dict()
-       data["id"] = doc.id
-       items.append(data)
-   return items
+# @app.get("/inventory/{user_id}")
+# async def get_inventory(user_id: str):
+#    # The items the user has in their inventory is stored locally in a list, and populated from the firestore database so we can fetch it for use at later times
+#    items = []
+#    # Getting the data from firestore where the user_id matches the user and putting it (streaming) in the items list
+#    docs = db.collection("inventory").where("user_id", "==", user_id).stream()
+#    for doc in docs:
+#        data = doc.to_dict()
+#        data["id"] = doc.id
+#        items.append(data)
+#    return items
 
 
 
 
-@app.post("/inventory")
-async def add_inventory(item: InventoryItem):
-   # Creates a new inventory item/collection document in firestore for the user
-   # Auto-detect category if not provided
-   category = item.category if item.category else detect_category(item.name)
+# @app.post("/inventory")
+# async def add_inventory(item: InventoryItem):
+#    # Creates a new inventory item/collection document in firestore for the user
+#    # Auto-detect category if not provided
+#    category = item.category if item.category else detect_category(item.name)
 
 
-   doc_ref = db.collection("inventory").document()
-   # Each inventory item is a dictionary with these fields
-   doc_ref.set({
-       "user_id": item.user_id,
-       "name": item.name,
-       "quantity": item.quantity,
-       "expiration_date": item.expiration_date,
-       "category": category,
-       "created_at": datetime.now()
-   })
-   return {"id": doc_ref.id, "message": "Item added", "category": category}
+#    doc_ref = db.collection("inventory").document()
+#    # Each inventory item is a dictionary with these fields
+#    doc_ref.set({
+#        "user_id": item.user_id,
+#        "name": item.name,
+#        "quantity": item.quantity,
+#        "expiration_date": item.expiration_date,
+#        "category": category,
+#        "created_at": datetime.now()
+#    })
+#    return {"id": doc_ref.id, "message": "Item added", "category": category}
 
 
 
 # post request means sending data from the frontend to the backend for processing, in this case for deleting an item
-@app.post("/inventory/delete")
-async def delete_inventory(req: DeleteItemRequest):
-   try:
-       # Permanently deletes the inventory item from Firestore using its document ID
-       db.collection("inventory").document(req.item_id).delete()
-       return {"message": "Item deleted successfully"}
-   except Exception as e:
-       raise HTTPException(
-           status_code=400, detail=f"Error deleting item: {str(e)}")
+# @app.post("/inventory/delete")
+# async def delete_inventory(req: DeleteItemRequest):
+#    try:
+#        # Permanently deletes the inventory item from Firestore using its document ID
+#        db.collection("inventory").document(req.item_id).delete()
+#        return {"message": "Item deleted successfully"}
+#    except Exception as e:
+#        raise HTTPException(
+#            status_code=400, detail=f"Error deleting item: {str(e)}")
 
 
 
 # put request means updating data in the backend, in this case for updating the category of an item
-@app.put("/inventory/{item_id}/category")
-async def update_category(item_id: str, req: UpdateCategoryRequest):
-   """
-   Update the category of an inventory item.
-   Validates that the category is one of the allowed values.
-   """
-   try:
-       # Validate category
-       if req.category not in VALID_CATEGORIES:
-           raise HTTPException(
-               status_code=400,
-               detail=f"Invalid category. Must be one of: {', '.join(VALID_CATEGORIES)}"
-           )
+# @app.put("/inventory/{item_id}/category")
+# async def update_category(item_id: str, req: UpdateCategoryRequest):
+#    """
+#    Update the category of an inventory item.
+#    Validates that the category is one of the allowed values.
+#    """
+#    try:
+#        # Validate category
+#        if req.category not in VALID_CATEGORIES:
+#            raise HTTPException(
+#                status_code=400,
+#                detail=f"Invalid category. Must be one of: {', '.join(VALID_CATEGORIES)}"
+#            )
 
 
-       # Update the document
-       doc_ref = db.collection("inventory").document(item_id)
-       doc = doc_ref.get()
+#        # Update the document
+#        doc_ref = db.collection("inventory").document(item_id)
+#        doc = doc_ref.get()
 
 
-       if not doc.exists:
-           raise HTTPException(status_code=404, detail="Item not found")
+#        if not doc.exists:
+#            raise HTTPException(status_code=404, detail="Item not found")
 
 
-       doc_ref.update({"category": req.category})
-       return {"message": "Category updated successfully", "category": req.category}
-   except HTTPException:
-       raise
-   except Exception as e:
-       raise HTTPException(
-           status_code=400, detail=f"Error updating category: {str(e)}")
+#        doc_ref.update({"category": req.category})
+#        return {"message": "Category updated successfully", "category": req.category}
+#    except HTTPException:
+#        raise
+#    except Exception as e:
+#        raise HTTPException(
+#            status_code=400, detail=f"Error updating category: {str(e)}")
 
 
 
 
-@app.post("/chat")
-async def chat(req: ChatRequest):
-    try:
-        # Get user's inventory
-        #Stores the item with all of its data as a string in the inventory list
-        inventory = []
-        docs = db.collection("inventory").where("user_id", "==", req.user_id).stream()
-        for doc in docs:
-            data = doc.to_dict()
-            #Using f-strings to get the name, quantity, and expiration date of each item in the inventory in a normalized way
-            inventory.append(f"{data['name']} (qty: {data['quantity']}, expires: {data.get('expiration_date', 'N/A')})")
+# @app.post("/chat")
+# async def chat(req: ChatRequest):
+#     try:
+#         # Get user's inventory
+#         #Stores the item with all of its data as a string in the inventory list
+#         inventory = []
+#         docs = db.collection("inventory").where("user_id", "==", req.user_id).stream()
+#         for doc in docs:
+#             data = doc.to_dict()
+#             #Using f-strings to get the name, quantity, and expiration date of each item in the inventory in a normalized way
+#             inventory.append(f"{data['name']} (qty: {data['quantity']}, expires: {data.get('expiration_date', 'N/A')})")
         
-        # Build prompt
-        #If inventory is empty, then the ternary statement fails and it says no items, otherwise it joins the items with new lines
-        #This variable is used in the f-string for the prompt to Vertex AI
-        inventory_text = "\n".join(inventory) if inventory else "No items in inventory"
-        #We will be prompting Vertex AI with this prompt to get recipe suggestions based on the user's inventory
-        prompt = f"""You are a helpful cooking assistant.
+#         # Build prompt
+#         #If inventory is empty, then the ternary statement fails and it says no items, otherwise it joins the items with new lines
+#         #This variable is used in the f-string for the prompt to Vertex AI
+#         inventory_text = "\n".join(inventory) if inventory else "No items in inventory"
+#         #We will be prompting Vertex AI with this prompt to get recipe suggestions based on the user's inventory
+#         prompt = f"""You are a helpful cooking assistant.
 
-Current inventory:
-{inventory_text}
+# Current inventory:
+# {inventory_text}
 
-User question: {req.message}
+# User question: {req.message}
 
-IMPORTANT: Format your response EXACTLY like this structure:
+# IMPORTANT: Format your response EXACTLY like this structure:
 
-DISH NAME: [Name of the recipe]
+# DISH NAME: [Name of the recipe]
 
-INGREDIENTS:
-- [ingredient 1 with amount]
-- [ingredient 2 with amount]
-- [ingredient 3 with amount]
+# INGREDIENTS:
+# - [ingredient 1 with amount]
+# - [ingredient 2 with amount]
+# - [ingredient 3 with amount]
 
-INSTRUCTIONS:
-1. [First step]
-2. [Second step]
-3. [Third step]
+# INSTRUCTIONS:
+# 1. [First step]
+# 2. [Second step]
+# 3. [Third step]
 
-Rules:
-- Use "DISH NAME:", "INGREDIENTS:", and "INSTRUCTIONS:" as section headers
-- Use simple dashes (-) for each ingredient with amounts
-- Use numbers (1., 2., 3.) for each instruction step
-- Put a blank line between each section
-- Keep instructions clear and concise
-- Prioritize items that are expiring soon
-- If the user asks a general question, still try to suggest a recipe in this format"""
+# Rules:
+# - Use "DISH NAME:", "INGREDIENTS:", and "INSTRUCTIONS:" as section headers
+# - Use simple dashes (-) for each ingredient with amounts
+# - Use numbers (1., 2., 3.) for each instruction step
+# - Put a blank line between each section
+# - Keep instructions clear and concise
+# - Prioritize items that are expiring soon
+# - If the user asks a general question, still try to suggest a recipe in this format"""
 
-        # Call Vertex AI with error handling
-        # The prompt is sent to Vertex AI and the response is stored in response
-        print(f"Sending prompt to Vertex AI: {prompt[:100]}...")  # Debug log
-        response = model.generate_content(prompt)
+#         # Call Vertex AI with error handling
+#         # The prompt is sent to Vertex AI and the response is stored in response
+#         print(f"Sending prompt to Vertex AI: {prompt[:100]}...")  # Debug log
+#         response = model.generate_content(prompt)
 
-        # Try different ways to access the response
-        if hasattr(response, 'text'):
-            response_text = response.text
-        elif hasattr(response, 'candidates') and response.candidates:
-            response_text = response.candidates[0].content.parts[0].text
-        else:
-            print(f"Response object: {response}")  # Debug log
-            response_text = str(response)
+#         # Try different ways to access the response
+#         if hasattr(response, 'text'):
+#             response_text = response.text
+#         elif hasattr(response, 'candidates') and response.candidates:
+#             response_text = response.candidates[0].content.parts[0].text
+#         else:
+#             print(f"Response object: {response}")  # Debug log
+#             response_text = str(response)
 
-        # Returns the response from Vertex AI to the frontend
-        return {"response": response_text}
+#         # Returns the response from Vertex AI to the frontend
+#         return {"response": response_text}
+#     except Exception as e:
+#         print(f"Error in chat endpoint: {str(e)}")  # Debug log
+#         print(f"Error type: {type(e)}")  # Debug log
+#         raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
+
+
+# if __name__ == "__main__":
+#    import uvicorn
+#    uvicorn.run(app, host="0.0.0.0", port=PORT)
+
+
+@app.post("/pdf/extract")
+async def extract_pdf(file: UploadFile = File(...)):
+    """Extract text from an uploaded PDF file using pdfplumber.
+
+    Returns a JSON object with a single `text` field containing the extracted text.
+    """
+    # Basic content-type validation
+    if file.content_type and file.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+
+    try:
+        # Read file bytes from the UploadFile
+        content = await file.read()
+        # Use BytesIO to provide a file-like object to pdfplumber
+        with pdfplumber.open(io.BytesIO(content)) as pdf:
+            pages_text = []
+            for page in pdf.pages:
+                text = page.extract_text()
+                if text:
+                    pages_text.append(text)
+
+        full_text = "\n\n".join(pages_text)
+        return {"text": full_text}
     except Exception as e:
-        print(f"Error in chat endpoint: {str(e)}")  # Debug log
-        print(f"Error type: {type(e)}")  # Debug log
-        raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
-
-
-if __name__ == "__main__":
-   import uvicorn
-   uvicorn.run(app, host="0.0.0.0", port=PORT)
+        # Bubble up a clean HTTP error to the client
+        raise HTTPException(status_code=500, detail=f"PDF extraction error: {str(e)}")
+    finally:
+        try:
+            await file.close()
+        except Exception:
+            pass

@@ -19,6 +19,7 @@ function App() {
  const [syllabusItems, setSyllabusItems] = useState([]);
  const [uploadedFile, setUploadedFile] = useState(null);
  const [filePreview, setFilePreview] = useState(null);
+ const [extractedText, setExtractedText] = useState("");
 
  // Alert state (for general notifications)
  const [alertState, setAlertState] = useState({
@@ -125,22 +126,47 @@ function App() {
    setLoading(true);
 
    try {
-     const formData = new FormData();
-     formData.append('file', file);
-     formData.append('user_id', user.uid);
+      // First: call the PDF extraction endpoint to get text (and capture filename locally)
+      try {
+        const extractForm = new FormData();
+        extractForm.append('file', file);
 
-     const res = await fetch(`${API_URL}/syllabi/upload`, {
-       method: 'POST',
-       body: formData,
-     });
+        const extractRes = await fetch(`${API_URL}/pdf/extract`, {
+          method: 'POST',
+          body: extractForm,
+        });
+        const extractData = await extractRes.json();
+        if (extractRes.ok) {
+          // Save extracted text and filename for later use
+          setExtractedText(extractData.text || "");
+          console.log('Extracted filename:', file.name);
+          // You can use file.name wherever needed (e.g., send it with other requests)
+        } else {
+          // Extraction failed, but don't block the main upload — show a warning
+          showAlert(extractData.detail || 'PDF extraction failed', 'warning');
+        }
+      } catch (err) {
+        console.error('PDF extract error', err);
+        showAlert('PDF extraction error', 'warning');
+      }
 
-     const data = await res.json();
-     if (res.ok) {
-       await fetchSyllabi();
-       showAlert('Syllabus uploaded successfully!', 'success');
-     } else {
-       showAlert(data.detail || 'Upload failed', 'error');
-     }
+      // Continue with existing syllabus upload behavior
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('user_id', user.uid);
+
+      const res = await fetch(`${API_URL}/syllabi/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        await fetchSyllabi();
+        showAlert('Syllabus uploaded successfully!', 'success');
+      } else {
+        showAlert(data.detail || 'Upload failed', 'error');
+      }
    } catch (err) {
      showAlert('Error uploading file', 'error');
    }
@@ -468,6 +494,43 @@ return (
                 />
               </label>
             </div>
+            {/* Extracted text preview */}
+            {uploadedFile && (
+              <div className="bg-[#D3D3D3] rounded-2xl shadow-lg p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="font-semibold text-gray-800">Selected file:</div>
+                  <div className="text-sm text-gray-600">{uploadedFile.name}</div>
+                </div>
+                <label className="block text-sm font-semibold mb-2 text-gray-700">Extracted text preview</label>
+                <textarea
+                  readOnly
+                  value={extractedText}
+                  rows={8}
+                  className="w-full p-3 rounded-lg border resize-none bg-white text-sm"
+                />
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={() => navigator.clipboard.writeText(extractedText || '')}
+                    disabled={!extractedText}
+                    className="px-4 py-2 rounded-lg text-white"
+                    style={{ backgroundColor: '#505081' }}
+                  >
+                    Copy text
+                  </button>
+                  <button
+                    onClick={() => {
+                      // Simple action: set filePreview to null to allow re-upload
+                      setUploadedFile(null);
+                      setFilePreview(null);
+                      setExtractedText("");
+                    }}
+                    className="px-4 py-2 rounded-lg border"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Right Panel - Syllabus Selection and Items */}
@@ -483,11 +546,15 @@ return (
                 className="w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#505081] bg-white transition"
               >
                 <option value="">Select a syllabus</option>
-                {Array.isArray(syllabi) && syllabi.map((syllabus) => (
+                {Array.isArray(syllabi)?(
+                 syllabi.map((syllabus) => (
                   <option key={syllabus.id} value={syllabus.id}>
                     {syllabus.name}
-                  </option>
-                ))}
+                    </option>
+                ))
+              ) : (
+                  <option disabled>No syllabi available</option>
+                )}
               </select>
           
             </div>
