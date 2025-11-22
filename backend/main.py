@@ -66,12 +66,6 @@ app.add_middleware(
    max_age=3600,  # Cache preflight for 1 hour
 )
 
-# Debug: Print CORS configuration on startup
-print(f"🔧 CORS Configuration:")
-print(f"   FRONTEND_URL: {FRONTEND_URL}")
-print(f"   Allowed Origins: {allowed_origins}")
-print(f"   Allow Credentials: {use_credentials}")
-
 
 # Initialize Firebase creds and gets a database client
 import json

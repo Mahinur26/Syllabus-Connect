@@ -12,7 +12,6 @@ ENV/
 .env
 
 # Firebase credentials
-bullavor-2b17089242ea.json
 *.json
 
 # IDEs
