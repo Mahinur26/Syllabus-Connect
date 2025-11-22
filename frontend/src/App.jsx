@@ -57,13 +57,6 @@ function App() {
  //Sends a POST request to the backend to either log in or sign up the user based on the isLogin state
  //A POST request means sending data from the frontend to the backend for processing, in this case for logging/signing in
  const handleAuth = async () => {
-   // BYPASS: Uncomment the lines below to skip authentication
-   const mockUser = { uid: 'test-user-123', email: email || 'test@example.com' };
-   setUser(mockUser);
-   localStorage.setItem("bullavor_user", JSON.stringify(mockUser));
-   showAlert('Bypassed login', 'success');
-   return;
-
    setLoading(true);
    try {
      const res = await fetch(
@@ -94,10 +87,18 @@ function App() {
  const fetchSyllabi = async () => {
    try {
      const res = await fetch(`${API_URL}/syllabi/${user.uid}`);
-     const data = await res.json();
-     setSyllabi(data);
+     if (res.ok) {
+       const data = await res.json();
+       // Ensure data is an array
+       setSyllabi(Array.isArray(data) ? data : []);
+     } else {
+       // If endpoint doesn't exist or returns error, set to empty array
+       setSyllabi([]);
+     }
    } catch (err) {
      console.error(err);
+     // On error, ensure syllabi is still an array
+     setSyllabi([]);
    }
  };
 
@@ -373,7 +374,7 @@ return (
           <div className="max-w-6xl mx-auto px-6 py-5 flex justify-between items-center">
             <h1 className="text-3xl font-bold" style={{ color: '#505081' }}>Syllabus Connect</h1>
             <div className="flex gap-6 items-center">
-              <span className="text-sm text-gray-600 font-medium">User</span>
+              <span className="text-sm text-gray-600 font-medium">{user.email}</span>
               <button
                 onClick={() => {
                   setUser(null);
@@ -482,7 +483,7 @@ return (
                 className="w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#505081] bg-white transition"
               >
                 <option value="">Select a syllabus</option>
-                {syllabi.map((syllabus) => (
+                {Array.isArray(syllabi) && syllabi.map((syllabus) => (
                   <option key={syllabus.id} value={syllabus.id}>
                     {syllabus.name}
                   </option>
