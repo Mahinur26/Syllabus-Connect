@@ -38,6 +38,8 @@ PORT = int(os.getenv("PORT", os.getenv("BACKEND_PORT", "8000")))
 
 # Google OAuth2 Configuration
 GOOGLE_CLIENT_SECRETS_FILE = "client_secret_469326734352-6hhcchpik5b0ov5v6a3gl2h45tfho7q0.apps.googleusercontent.com.json"
+GOOGLE_OAUTH_CLIENT_ID = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
+GOOGLE_OAUTH_CLIENT_SECRET = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 # Dynamic redirect URI - uses BACKEND_URL if set (for production), otherwise localhost
 BACKEND_URL = os.getenv("BACKEND_URL", f"http://localhost:{PORT}")
@@ -496,17 +498,34 @@ async def get_google_auth_url(user_id: str):
     Frontend redirects user to this URL to start OAuth flow.
     """
     try:
-        # Create flow with absolute path
+        # Try to use client secrets file first (for local dev)
         client_secrets_path = os.path.join(
             os.path.dirname(__file__),
             GOOGLE_CLIENT_SECRETS_FILE
         )
         
-        flow = Flow.from_client_secrets_file(
-            client_secrets_path,
-            scopes=SCOPES,
-            redirect_uri=REDIRECT_URI
-        )
+        if os.path.exists(client_secrets_path):
+            flow = Flow.from_client_secrets_file(
+                client_secrets_path,
+                scopes=SCOPES,
+                redirect_uri=REDIRECT_URI
+            )
+        else:
+            # Fallback to environment variables (for Render)
+            client_config = {
+                "web": {
+                    "client_id": GOOGLE_OAUTH_CLIENT_ID,
+                    "client_secret": GOOGLE_OAUTH_CLIENT_SECRET,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [REDIRECT_URI]
+                }
+            }
+            flow = Flow.from_client_config(
+                client_config,
+                scopes=SCOPES,
+                redirect_uri=REDIRECT_URI
+            )
         
         # Generate authorization URL with state parameter
         authorization_url, state = flow.authorization_url(
@@ -562,12 +581,30 @@ async def google_auth_callback(code: str, state: str):
             GOOGLE_CLIENT_SECRETS_FILE
         )
         
-        flow = Flow.from_client_secrets_file(
-            client_secrets_path,
-            scopes=SCOPES,
-            redirect_uri=REDIRECT_URI,
-            state=state
-        )
+        if os.path.exists(client_secrets_path):
+            flow = Flow.from_client_secrets_file(
+                client_secrets_path,
+                scopes=SCOPES,
+                redirect_uri=REDIRECT_URI,
+                state=state
+            )
+        else:
+            # Fallback to environment variables (for Render)
+            client_config = {
+                "web": {
+                    "client_id": GOOGLE_OAUTH_CLIENT_ID,
+                    "client_secret": GOOGLE_OAUTH_CLIENT_SECRET,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [REDIRECT_URI]
+                }
+            }
+            flow = Flow.from_client_config(
+                client_config,
+                scopes=SCOPES,
+                redirect_uri=REDIRECT_URI,
+                state=state
+            )
         
         flow.fetch_token(code=code)
         credentials = flow.credentials
