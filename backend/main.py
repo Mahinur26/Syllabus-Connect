@@ -364,12 +364,7 @@ Rules:
         print(f"Error in chat endpoint: {str(e)}")  # Debug log
         print(f"Error type: {type(e)}")  # Debug log
         raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
-
-
-if __name__ == "__main__":
-   import uvicorn
-   uvicorn.run(app, host="0.0.0.0", port=PORT)
-
+    
 @app.post("/pdf/extract")
 async def extract_pdf(file: UploadFile = File(...)):
     """Extract text from an uploaded PDF file using pdfplumber.
@@ -415,3 +410,9 @@ async def upload_syllabus(file: UploadFile = File(...)):
 async def get_syllabi(user_id: str):
     # Placeholder: return something for the user
     return {"user": user_id, "syllabi": []}
+
+
+if __name__ == "__main__":
+   import uvicorn
+   uvicorn.run(app, host="0.0.0.0", port=PORT)
+
