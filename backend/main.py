@@ -105,69 +105,6 @@ vertexai.init(
 model = GenerativeModel(MODEL_NAME)
 
 
-# Category mapping dictionary
-CATEGORY_MAPPING = {
-   "fruits": [
-       "apple", "apples", "banana", "bananas", "orange", "oranges", "strawberry", "strawberries",
-       "grape", "grapes", "watermelon", "melon", "pineapple", "mango", "mangos", "kiwi", "kiwis",
-       "peach", "peaches", "pear", "pears", "plum", "plums", "cherry", "cherries", "blueberry",
-       "blueberries", "raspberry", "raspberries", "blackberry", "blackberries", "cranberry",
-       "cranberries", "lemon", "lemons", "lime", "limes", "grapefruit", "avocado", "avocados",
-       "papaya", "coconut", "coconuts", "pomegranate", "fig", "figs", "date", "dates",
-       "apricot", "apricots", "nectarine", "nectarines", "tangerine", "tangerines", "clementine",
-       "clementines", "mandarin", "mandarins", "dragon fruit", "passion fruit", "lychee",
-       "guava", "star fruit", "persimmon", "persimmons"
-   ],
-   "vegetables": [
-       "tomato", "tomatoes", "lettuce", "spinach", "cucumber", "cucumbers", "carrot", "carrots",
-       "broccoli", "cauliflower", "bell pepper", "bell peppers", "pepper", "peppers", "onion",
-       "onions", "garlic", "potato", "potatoes", "sweet potato", "sweet potatoes", "corn",
-       "peas", "green beans", "beans", "zucchini", "eggplant", "eggplants", "squash",
-       "mushroom", "mushrooms", "cabbage", "kale", "celery", "asparagus", "brussels sprouts",
-       "brussel sprouts", "radish", "radishes", "beet", "beets", "turnip", "turnips",
-       "artichoke", "artichokes", "leek", "leeks", "scallion", "scallions", "green onion",
-       "green onions", "shallot", "shallots", "bok choy", "chard", "arugula", "romaine",
-       "iceberg", "butter lettuce", "red cabbage", "purple cabbage", "savoy cabbage",
-       "yellow squash", "butternut squash", "acorn squash", "pumpkin", "pumpkins", "okra",
-       "collard greens", "mustard greens", "endive", "fennel", "jicama"
-   ],
-   "dairy": [
-       "milk", "cheese", "yogurt", "yoghurt", "butter", "cream", "sour cream", "cottage cheese",
-       "cream cheese", "mozzarella", "cheddar", "swiss cheese", "parmesan", "feta", "ricotta",
-       "gouda", "brie", "camembert", "blue cheese", "goat cheese", "provolone", "pepper jack",
-       "monterey jack", "american cheese", "heavy cream", "half and half", "whipping cream",
-       "buttermilk", "greek yogurt", "greek yoghurt", "greek style yogurt", "skim milk",
-       "whole milk", "2% milk", "1% milk", "almond milk", "soy milk", "oat milk", "coconut milk",
-       "ice cream", "gelato", "sorbet", "frozen yogurt"
-   ],
-   "meat": [
-       "chicken", "beef", "pork", "turkey", "lamb", "duck", "ham", "bacon", "sausage", "sausages",
-       "ground beef", "ground turkey", "ground pork", "ground chicken", "chicken breast",
-       "chicken thighs", "chicken wings", "chicken drumsticks", "steak", "ribs", "pork chops",
-       "pork tenderloin", "roast beef", "pot roast", "meatballs", "meatball", "hot dog",
-       "hot dogs", "hamburger", "hamburgers", "burger", "burgers", "pepperoni", "salami",
-       "prosciutto", "chorizo", "bratwurst", "kielbasa", "pastrami", "corned beef",
-       "roast chicken", "roasted chicken", "chicken leg", "chicken legs", "chicken wing",
-       "drumstick", "drumsticks", "ribeye", "sirloin", "tenderloin", "filet mignon", "brisket", "short ribs"
-   ],
-   "grains": [
-       "rice", "bread", "pasta", "spaghetti", "noodles", "flour", "oats", "oatmeal", "quinoa",
-       "barley", "wheat", "rye", "cornmeal", "couscous", "bulgur", "buckwheat", "millet",
-       "farro", "wild rice", "brown rice", "white rice", "jasmine rice", "basmati rice",
-       "sushi rice", "arborio rice", "bread loaf", "sandwich bread", "whole wheat bread",
-       "white bread", "sourdough", "baguette", "rolls", "buns", "pita", "tortilla", "tortillas",
-       "naan", "crackers", "cereal", "granola", "cereal bars", "rice cakes", "pretzels",
-       "macaroni", "penne", "fettuccine", "linguine", "rigatoni", "fusilli", "ravioli",
-       "lasagna", "lasagne", "ramen", "udon", "soba", "rice noodles", "egg noodles"
-   ]
-}
-
-
-# Valid categories
-VALID_CATEGORIES = ["Fruits", "Vegetables", "Dairy", "Meat", "Grains", "Other"]
-
-
-
 
 def detect_category(item_name: str) -> str:
     # docstring explaining the function

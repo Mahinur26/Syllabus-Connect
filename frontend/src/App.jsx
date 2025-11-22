@@ -643,10 +643,10 @@ return (
       {/* Chat Tab */}
       {activeTab === 'chat' && (
   <div className="bg-[#D3D3D3] rounded-2xl shadow-lg p-6 space-y-4">
-          <h2 className="text-xl font-bold mb-4">Recipe Helper</h2>
+          <h2 className="text-xl font-bold mb-4">Syllabus Buddy</h2>
           <div className="h-96 overflow-y-auto p-4 bg-gray-50 rounded-xl space-y-3">
             {chatMessages.length === 0 ? (
-              <p className="text-gray-500 text-center">Ask me for recipe suggestions!</p>
+              <p className="text-gray-500 text-center">Ask me about your syllabus!</p>
             ) : (
               chatMessages.map((msg, i) => (
                 <div key={i} className={`${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
@@ -712,7 +712,7 @@ return (
           <div className="flex gap-3">
             <input
               type="text"
-              placeholder="Ask for recipes..."
+              placeholder="Ask anything..."
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
