@@ -1,7 +1,9 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
+import io
+import pdfplumber
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
 import vertexai
@@ -11,7 +13,6 @@ import os
 from dotenv import load_dotenv
 from google.oauth2 import service_account
 from difflib import get_close_matches
-
 
 # Load environment variables
 load_dotenv()
@@ -368,3 +369,49 @@ Rules:
 if __name__ == "__main__":
    import uvicorn
    uvicorn.run(app, host="0.0.0.0", port=PORT)
+
+@app.post("/pdf/extract")
+async def extract_pdf(file: UploadFile = File(...)):
+    """Extract text from an uploaded PDF file using pdfplumber.
+
+    Returns a JSON object with a single `text` field containing the extracted text.
+    """
+    # Basic content-type validation
+    if file.content_type and file.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+
+    try:
+        # Read file bytes from the UploadFile
+        content = await file.read()
+        # Use BytesIO to provide a file-like object to pdfplumber
+        with pdfplumber.open(io.BytesIO(content)) as pdf:
+            pages_text = []
+            for page in pdf.pages:
+                text = page.extract_text()
+                if text:
+                    pages_text.append(text)
+
+        full_text = "\n\n".join(pages_text)
+        return {"text": full_text}
+    except Exception as e:
+        # Bubble up a clean HTTP error to the client
+        raise HTTPException(status_code=500, detail=f"PDF extraction error: {str(e)}")
+    finally:
+        try:
+            await file.close()
+        except Exception:
+            pass
+    
+@app.post("/syllabi/upload")
+async def upload_syllabus(file: UploadFile = File(...)):
+    # You could call your existing extract_pdf function internally
+    content = await file.read()
+    with pdfplumber.open(io.BytesIO(content)) as pdf:
+        pages_text = [p.extract_text() for p in pdf.pages if p.extract_text()]
+    full_text = "\n\n".join(pages_text)
+    return {"text": full_text}
+
+@app.get("/syllabi/{user_id}")
+async def get_syllabi(user_id: str):
+    # Placeholder: return something for the user
+    return {"user": user_id, "syllabi": []}

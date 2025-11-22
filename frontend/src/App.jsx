@@ -19,6 +19,7 @@ function App() {
  const [syllabusItems, setSyllabusItems] = useState([]);
  const [uploadedFile, setUploadedFile] = useState(null);
  const [filePreview, setFilePreview] = useState(null);
+ const [extractedText, setExtractedText] = useState("");
 
  // Alert state (for general notifications)
  const [alertState, setAlertState] = useState({
@@ -125,27 +126,88 @@ function App() {
    setLoading(true);
 
    try {
-     const formData = new FormData();
-     formData.append('file', file);
-     formData.append('user_id', user.uid);
+    // First try to extract text from the PDF so we can show it in the UI
+    try {
+      const extractForm = new FormData();
+      extractForm.append('file', file);
 
-     const res = await fetch(`${API_URL}/syllabi/upload`, {
-       method: 'POST',
-       body: formData,
-     });
+      const extractRes = await fetch(`${API_URL}/pdf/extract`, {
+        method: 'POST',
+        body: extractForm,
+      });
+      const extractData = await extractRes.json();
+      if (extractRes.ok) {
+        setExtractedText(extractData.text || "");
+      } else {
+        // Extraction failed; warn but continue with upload
+        showAlert(extractData.detail || 'PDF extraction failed', 'warning');
+      }
+    } catch (err) {
+      console.error('PDF extraction error', err);
+      showAlert('PDF extraction error', 'warning');
+    }
 
-     const data = await res.json();
-     if (res.ok) {
-       await fetchSyllabi();
-       showAlert('Syllabus uploaded successfully!', 'success');
-     } else {
-       showAlert(data.detail || 'Upload failed', 'error');
-     }
+    // Continue with existing syllabus upload behavior
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('user_id', user.uid);
+
+    const res = await fetch(`${API_URL}/syllabi/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data = await res.json();
+    if (res.ok) {
+      await fetchSyllabi();
+      showAlert('Syllabus uploaded successfully!', 'success');
+    } else {
+      showAlert(data.detail || 'Upload failed', 'error');
+    }
    } catch (err) {
      showAlert('Error uploading file', 'error');
    }
    setLoading(false);
  };
+
+  // Re-run extraction for the currently selected file
+  const reExtract = async () => {
+    if (!uploadedFile) return;
+    setLoading(true);
+    try {
+      const extractForm = new FormData();
+      extractForm.append('file', uploadedFile);
+
+      const extractRes = await fetch(`${API_URL}/pdf/extract`, {
+        method: 'POST',
+        body: extractForm,
+      });
+      const extractData = await extractRes.json();
+      if (extractRes.ok) {
+        setExtractedText(extractData.text || "");
+        showAlert('Re-extraction complete', 'success');
+      } else {
+        showAlert(extractData.detail || 'Re-extraction failed', 'error');
+      }
+    } catch (err) {
+      console.error('Re-extract error', err);
+      showAlert('Re-extraction error', 'error');
+    }
+    setLoading(false);
+  };
+
+  const downloadExtractedText = () => {
+    const text = extractedText || '';
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (uploadedFile && uploadedFile.name ? uploadedFile.name.replace(/\.pdf$/i, '') : 'extracted') + '.txt';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
 
  // Handle syllabus selection
  useEffect(() => {
@@ -468,6 +530,66 @@ return (
                 />
               </label>
             </div>
+            {/* Extracted text preview + actions */}
+            {uploadedFile && (
+              <div className="bg-[#D3D3D3] rounded-2xl shadow-lg p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="font-semibold text-gray-800">Selected file:</div>
+                  <div className="text-sm text-gray-600">{uploadedFile.name}</div>
+                </div>
+                <label className="block text-sm font-semibold mb-2 text-gray-700">Extracted text preview</label>
+                <textarea
+                  readOnly
+                  value={extractedText}
+                  rows={8}
+                  className="w-full p-3 rounded-lg border resize-none bg-white text-sm"
+                />
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={() => navigator.clipboard.writeText(extractedText || '')}
+                    disabled={!extractedText}
+                    className="px-4 py-2 rounded-lg text-white"
+                    style={{ backgroundColor: '#505081' }}
+                  >
+                    Copy text
+                  </button>
+                  <button
+                    onClick={() => {
+                      setUploadedFile(null);
+                      setFilePreview(null);
+                      setExtractedText("");
+                    }}
+                    className="px-4 py-2 rounded-lg border"
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                <div className="mt-4 border-t pt-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-sm text-gray-600">Words: {extractedText ? extractedText.trim().split(/\s+/).filter(Boolean).length : 0}</div>
+                    <div className="text-sm text-gray-600">Chars: {extractedText ? extractedText.length : 0}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={reExtract}
+                      disabled={!uploadedFile || loading}
+                      className="px-4 py-2 rounded-lg text-white"
+                      style={{ backgroundColor: '#505081' }}
+                    >
+                      {loading ? 'Working...' : 'Re-extract'}
+                    </button>
+                    <button
+                      onClick={downloadExtractedText}
+                      disabled={!extractedText}
+                      className="px-4 py-2 rounded-lg border"
+                    >
+                      Download text
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Right Panel - Syllabus Selection and Items */}
